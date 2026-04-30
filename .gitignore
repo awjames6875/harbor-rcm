@@ -1,0 +1,38 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+
+# AWS
+.aws-sam/
+samconfig.toml.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PHI / Sensitive data (NEVER COMMIT)
+data/real-patients/
+data/production/
+*.phi.json
