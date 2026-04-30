@@ -18,9 +18,9 @@ I have ADHD. I'm a vibe coder — I build with AI tools, not traditional dev. My
 
 ## What Harbor RCM Is
 
-A productized AI agent platform that automates Revenue Cycle Management for small medical and behavioral health practices. First agent is ARIA (insurance verification). Sold as turnkey installs at $5K setup + $1,500-3,500/month, deployed into the client's own AWS account so I never touch PHI legally.
+A productized AI agent platform that automates Revenue Cycle Management for small medical practices. First agent is ARIA (insurance verification). Sold as turnkey installs at $5K setup + $1,500-3,500/month, deployed into the client's own AWS account so I never touch PHI legally.
 
-**First customer:** primary care doctor friend in Ft Worth Texas (closing this month).
+**First customer:** primary care doctor friend in Tulsa (closing this month).
 **Pilot agency:** my own Safe Harbor (Customer Zero — I use the product daily).
 **Target:** $30-50K MRR within 12 months from 15-20 small Oklahoma practices.
 

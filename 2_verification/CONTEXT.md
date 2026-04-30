@@ -3,6 +3,36 @@
 ## Purpose
 Take validated patient data from /1_intake, log into the right payer portal via Skyvern, run the eligibility check, and capture the raw 271 response.
 
+## The Two Paths (Read This First)
+
+ARIA uses two paths to verify insurance. Path A is ALWAYS tried first.
+
+```
+Payer on Availity API? (UHC, Aetna, BCBS, Medicare, Cigna)
+    YES → Path A: Availity REST API (fast, cheap, no browser)
+    NO  → Path B: Skyvern portal scrape (slower, costs more, works for any payer)
+```
+
+**Path A — Availity API (~80% of verifications)**
+- Python code sends a 270 request directly to Availity
+- Availity returns a 271 response
+- No browser opened. No Skyvern. No Workflow-Use.
+- Cost: ~$0.003 per verification
+- Speed: 3 seconds
+
+**Path B — Skyvern + Workflow-Use (~20% of verifications)**
+- Skyvern opens a real Chrome browser
+- Replays the Workflow-Use recorded session from this payer
+- Extracts coverage data from the screen
+- Cost: ~$0.10-0.25 per verification
+- Speed: 8-12 seconds
+
+**Workflow-Use role:** Used ONCE per client per payer to record the portal session.
+That recording lives in `2_verification/workflows/[payer]-workflow.json`.
+Skyvern replays it forever. Never record again unless the portal layout changes.
+
+---
+
 ## The Process (Step by Step)
 1. Receive structured patient payload from /1_intake
 2. Look up which portal handles this payer (Availity, Waystar, payer-direct)

@@ -1,9 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
----
-
 # CLAUDE.md — Harbor RCM Master Router
 
 ## Identity
@@ -16,16 +10,6 @@ Adam has ADHD. ALWAYS:
 - Warn before destructive or expensive actions
 - Visual when possible (tables, lists, code blocks)
 - Confirm what good looks like at each step
-
-## Codebase State (as of 2026-04-30)
-
-This repo is **pre-implementation** — architecture and documentation only. Each room (`1_intake/`, `2_verification/`, `3_normalization/`, `4_delivery/`) currently contains:
-- A `CONTEXT.md` with the room's purpose, process, tech stack, constraints, and data-shape contract — **read this first when entering a room**
-- Empty `code/`, `skills/`, `tests/` directories (stub `README.md` only)
-
-There is no `package.json`, `pyproject.toml`, `requirements.txt`, lockfile, CI config, or test runner yet. Do not search for build/lint/test commands — they will be added when implementation starts. When you write the first code in a room, also create the matching `requirements.txt` / `pytest` config in that room's folder.
-
-The `skills/*.md` files referenced in each room's `CONTEXT.md` (e.g. `skills/skyvern-workflows.md`) **do not exist yet** — they are planned Layer 3 assets. If asked to use one, create it; don't search for it.
 
 ## Routing Table (Jake's Pattern — How To Find The Right Room)
 
@@ -40,63 +24,9 @@ The `skills/*.md` files referenced in each room's `CONTEXT.md` (e.g. `skills/sky
 | Add a new agent (PAULA, EVA, etc.) | /docs | PRD.md, then duplicate ARIA pattern |
 | Update pricing or business model | /docs | PRD.md |
 
-## Where Things Live
-
-| File | Audience | When to read |
-|------|----------|--------------|
-| `CLAUDE.md` (this file) | Claude Code | Always — auto-loaded |
-| `<room>/CONTEXT.md` | Claude Code | When entering that room (per routing table) |
-| `docs/PRD.md` | Claude Code | When adding payers, agents, or major features |
-| `PROJECT_KNOWLEDGE.md` | **Claude.ai Projects only** (web app) | Strategy/sales conversations — **not** for code work |
-| `README.md` | Humans | Onboarding new contributors |
-
-## Architecture: The 4-Room Pipeline
-
-ARIA is a linear data pipeline. Each room is a Lambda-style transform that consumes a structured payload from the previous room and emits one to the next. **Each room's `CONTEXT.md` defines its output JSON shape — that shape is the contract with the downstream room. Never change a shape without updating the consumer.**
-
-```
-EHR webhook / CSV
-        │
-        ▼
-┌──────────────────┐    patient + payer payload
-│ 1_intake         │    (validated, deduplicated)
-│ Lambda + Pydantic│────────────────────┐
-└──────────────────┘                    ▼
-                              ┌──────────────────┐    raw 271 + screenshots
-                              │ 2_verification   │    (Availity API or
-                              │ Skyvern + Availity│   Skyvern portal scrape)
-                              └──────────────────┘────────────────┐
-                                                                  ▼
-                                                        ┌──────────────────┐    canonical benefits
-                                                        │ 3_normalization  │    object (payer-agnostic,
-                                                        │ Python + Pydantic│    schema-versioned)
-                                                        └──────────────────┘──────┐
-                                                                                  ▼
-                                                                        ┌──────────────────┐
-                                                                        │ 4_delivery       │
-                                                                        │ EHR + alerts +   │
-                                                                        │ HIPAA audit log  │
-                                                                        └──────────────────┘
-```
-
-**Key invariants:**
-- `2_verification` tries the Availity API first (cheap, fast); only falls back to Skyvern portal scraping when no API exists for that payer.
-- `3_normalization` outputs the same canonical schema regardless of input payer — this is the source of truth. One normalizer function per payer.
-- `4_delivery` writes the audit log **before** writing to the EHR (audit even on EHR failure).
-- PHI never leaves the client's AWS account. Adam never touches PHI.
-
-For the exact JSON shape of each handoff, see the `## Data Shape` section in the destination room's `CONTEXT.md`.
-
-## Platform & Commands
-
-- **Shell:** Windows 11. Bash is available (Git Bash); PowerShell is also available. Prefer bash syntax in examples for portability.
-- **Python launcher:** Use `py` (the Windows launcher) — `python` is not on PATH on Adam's machine. Example: `py -m pytest tests/`, `py -m venv .venv`.
-- **No project-wide commands yet** (see "Codebase State" above). When implementation starts, the convention is one `requirements.txt` and `pytest` config per room.
-- **Adam's other tools:** Antigravity IDE (primary), VS Code (secondary), Claude Code terminal.
-
 ## File Naming Conventions
 - Documentation: `YYYY-MM-DD-topic.md` (e.g., `2026-04-30-availity-integration.md`)
-- Code files: `snake_case.py`
+- Code files: `snake_case.py` (Python is `py` on Windows, not `python`)
 - Test data: `data/test-[scenario].json`
 - Skyvern workflows: `workflows/[payer]-[action].json`
 - Patient data (TEST ONLY): `data/test-patients/[name].json`
@@ -123,6 +53,53 @@ For the exact JSON shape of each handoff, see the `## Data Shape` section in the
 | Cloud Hosting | Client's own AWS | Adam never touches PHI |
 | Database | DynamoDB | HIPAA-eligible on AWS |
 | CRM | GoHighLevel | Adam's existing client portal |
+
+## Verification Path Logic (Critical — Read Before Touching 2_verification)
+
+ARIA uses TWO paths to verify insurance. Always try Path A first.
+Path B is the fallback ONLY when Path A is not available.
+
+```
+Patient verification request arrives
+          ↓
+Is this payer on Availity API? (UHC, Aetna, BCBS, Medicare, Cigna)
+          ↓
+    YES → Path A: Availity REST API
+          Cost: ~$0.003 per verification
+          Speed: 3 seconds
+          How: Python code calls Availity directly — no browser, no Skyvern
+          ↓
+    NO → Path B: Skyvern + Workflow-Use
+          Cost: ~$0.10-0.25 per verification
+          Speed: 8-12 seconds
+          How: Skyvern replays recorded workflow in a real browser
+```
+
+**Path A — Availity API (Primary):**
+Direct API call. No browser. No Skyvern. Just Python talking to Availity servers.
+Use for: UnitedHealthcare, Aetna, BCBS, Medicare, Cigna (80% of patients)
+
+**Path B — Skyvern + Workflow-Use (Fallback):**
+Skyvern opens a real browser and replays a recorded workflow.
+Workflow-Use is used ONCE to record the portal session at the client's office.
+Skyvern replays that recording for every future patient.
+Use for: SoonerCare, small regional payers, any payer NOT on Availity API (20% of patients)
+
+**Payer Path Reference:**
+| Payer | Path | Cost |
+|-------|------|------|
+| UnitedHealthcare | API | $0.003 |
+| Aetna | API | $0.003 |
+| BCBS | API | $0.003 |
+| Medicare | API | $0.003 |
+| Cigna | API | $0.003 |
+| SoonerCare (Oklahoma Medicaid) | Skyvern | $0.10-0.25 |
+| Small regional payers | Skyvern | $0.10-0.25 |
+
+**Rule:** Never use Skyvern for a payer that has an Availity API connection.
+It costs 50x more and is slower. API first. Always.
+
+---
 
 ## Business Context
 
@@ -171,12 +148,3 @@ For the exact JSON shape of each handoff, see the `## Data Shape` section in the
 - ⏳ Build live ARIA integration
 - ⏳ Close first customer at $2,500 setup + $500/mo
 - ⏳ Document install playbook
-
-
-<claude-mem-context>
-# Recent Activity
-
-<!-- This section is auto-generated by claude-mem. Edit content outside the tags. -->
-
-*No recent activity*
-</claude-mem-context>
