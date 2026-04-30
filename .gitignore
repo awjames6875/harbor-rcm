@@ -36,3 +36,6 @@ Thumbs.db
 data/real-patients/
 data/production/
 *.phi.json
+
+# Harbor loop state (ephemeral, never commit)
+.claude/state/

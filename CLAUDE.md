@@ -41,6 +41,17 @@ Adam has ADHD. ALWAYS:
 7. **Sandbox → Staging → Production.** Never skip steps.
 8. **One client = one AWS account.** Never multi-tenant. Each install is isolated.
 
+## Adversarial Review Rule
+Before writing code that touches PHI (any code under /2_verification, /3_normalization, or /4_delivery), the workflow is:
+1. Claude Code drafts the plan in plan mode.
+2. Run `/codex adversarial-review` scoped to the relevant room (e.g. `/codex adversarial-review 2_verification/`).
+3. Apply Codex's feedback to the plan.
+4. Only then write code.
+
+For non-PHI work (demo HTML, sales copy, marketing pages), skip Codex — Claude is better at those and Codex's feedback won't match the sales voice.
+
+**Also run `/codex rescue --background` before each milestone:** before the demo at the doctor's office, before the first install, before deploying to a new client AWS account. Have it look for hardcoded credentials, missing audit-log entries, PHI in CloudWatch logs, and over-broad IAM policies.
+
 ## Tech Stack (Locked In — Don't Suggest Alternatives)
 
 | Layer | Tool | Why |
