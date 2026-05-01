@@ -1,4 +1,4 @@
 Room: 2_check-coverage
-File: payer_router.py
-Task: Map payers to Path A (Availity API) or Path B (Skyvern)
+File: verification_handler.py (+ payer_router.py patch)
+Task: Build verification_handler orchestrator using payer_router
 Status: IN PROGRESS

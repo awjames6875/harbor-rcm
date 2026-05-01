@@ -1,10 +1,10 @@
 PAYER_ROUTES = {
-    "unitedhealth": {"path": "A"},
-    "aetna": {"path": "A"},
-    "bcbs": {"path": "A"},
-    "medicare": {"path": "A"},
-    "cigna": {"path": "A"},
-    "soonercare": {"path": "B", "workflow": "soonercare_eligibility.json"},
+    "unitedhealth": {"path": "A", "payer_id": "UHC"},
+    "aetna":        {"path": "A", "payer_id": "AETNA"},
+    "bcbs":         {"path": "A", "payer_id": "BCBS"},
+    "medicare":     {"path": "A", "payer_id": "MDCR"},
+    "cigna":        {"path": "A", "payer_id": "CIGNA"},
+    "soonercare":   {"path": "B", "workflow": "soonercare_eligibility.json"},
 }
 
 

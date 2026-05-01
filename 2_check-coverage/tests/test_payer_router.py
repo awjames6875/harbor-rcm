@@ -4,7 +4,9 @@ from payer_router import get_route
 
 def test_path_a_payers():
     for payer in ["unitedhealth", "aetna", "bcbs", "medicare", "cigna"]:
-        assert get_route(payer) == {"path": "A"}
+        route = get_route(payer)
+        assert route["path"] == "A"
+        assert "payer_id" in route
 
 
 def test_path_b_soonercare():
@@ -21,4 +23,4 @@ def test_case_insensitive():
 
 
 def test_whitespace_stripped():
-    assert get_route("  cigna ") == {"path": "A"}
+    assert get_route("  cigna ")["path"] == "A"
