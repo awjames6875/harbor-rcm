@@ -1,96 +1,44 @@
-# CONTEXT.md — Room 3: Normalization
+﻿# CONTEXT.md — 3_normalization (Benefits Parsing, Confidence Scoring, and Self-Improvement)
 
 ## Purpose
-Take the messy raw 271 response from /2_verification and turn it into a clean, structured benefits object that's identical regardless of which payer it came from.
+Transforms raw verification results into clean benefits objects with confidence scores. Loads payer profiles from DynamoDB to anchor scoring against historical baselines. Logs every human correction so ARIA gets smarter over time. This room is where the long-term moat gets built — the longer a practice uses ARIA, the more accurate it becomes for their specific payer mix.
 
-## The Process (Step by Step)
-1. Receive raw 271 response (EDI X12 or JSON) from /2_verification
-2. Identify the payer format (each payer structures 271s differently)
-3. Parse using the payer-specific normalizer
-4. Extract key fields: status, plan name, copay, deductible (met/remaining), coinsurance, OOP max, prior auth required
-5. Validate completeness — flag missing fields
-6. Apply business rules (e.g., calculate patient OOP cost)
-7. Output canonical benefits object
-8. Forward to /4_delivery
+## The Three Things This Room Does
 
-## Identity & Audience
-- Who uses this room: Internal — never seen by humans directly
-- Tone of voice: N/A (data transformation only)
-- What "good" looks like here: Same structured output regardless of input payer. Zero data loss. Every field has a known source.
+First, it parses. Raw 271 responses and Skyvern extractions come in messy and payer-specific. This room runs them through payer-specific normalizers and outputs a clean canonical benefits object that looks identical regardless of which payer or path produced the data.
 
-## Tech Stack For This Room
-- **Python** (`py` not `python` on Windows) — primary language
-- **Pydantic** — output schema validation
-- **JSON Schema** — canonical benefits format definition
-- **AWS Lambda** — runs as a transform step
-- **Claude via AWS Bedrock** — for parsing edge cases / non-standard responses
+Second, it scores. Every normalized result gets a confidence score before it leaves this room. The score is anchored against the payer profile for this specific practice, so ARIA knows whether a particular response looks normal or suspicious based on twelve months of historical data for this exact client-payer combination. Without the historical baseline, a $0 copay might look suspicious. With the baseline, ARIA knows that this particular BCBS plan at this practice genuinely has a $0 copay for preventive visits.
 
-## Patterns to Follow
-- One normalizer function per payer (`normalize_uhc()`, `normalize_aetna()`, etc.)
-- Canonical output schema is the source of truth — never change it without updating all normalizers
-- Use Claude (via Bedrock) ONLY for ambiguous fields (last resort, costs money)
-- Store every raw 271 alongside its normalized output (for debugging)
-- Version your schemas (`benefits_schema_v1.json`)
+Third, it learns. Every time a human corrects a field in Room 4 review queue, that correction flows back into this room and gets logged to DynamoDB. Over time those corrections accumulate into updated parsing rules that handle edge cases ARIA had never seen before. The longer ARIA runs at a practice, the fewer human corrections are needed because the system has already learned from previous mistakes.
 
-## Never Do This (Constraints)
-- NEVER guess at missing fields — return null and flag it
-- NEVER apply payer-specific logic in the canonical schema layer
-- NEVER call Bedrock for fields you can parse with regex (waste of money)
-- NEVER ship a new payer normalizer without test cases
-- NEVER modify the canonical schema without bumping the version
+## Key Files
 
-## Skills To Load (Layer 3)
-When working in this room, also load:
-- `skills/edi-271-parsing.md` — X12 EDI structure reference
-- `skills/pydantic-schemas.md` — schema patterns
-- `skills/bedrock-fallback.md` — when to use Claude for parsing
+normalizer_base.py defines the canonical benefits schema using Pydantic. Every payer-specific normalizer must output this exact shape: coverage_status, copay, deductible_remaining, oop_max, prior_auth_required, effective_date, plan_name, and raw_response. The raw_response field carries the original unmodified data for the review queue side-by-side view.
 
-## Data Shape (Canonical Benefits Object)
+normalize_uhc.py is the UnitedHealthcare-specific parser. It knows UHC 271 response format and field locations. Falls back to Claude via Bedrock for ambiguous or malformed responses.
 
-This is the SINGLE source of truth — every payer normalizes TO this shape:
+normalize_aetna.py is the Aetna-specific parser. Same pattern as UHC but for Aetna response format.
 
-```json
-{
-  "patient_id": "hash_abc123",
-  "verification_id": "ver_xyz789",
-  "normalized_at": "2026-04-30T03:15:33Z",
-  "schema_version": "v1",
-  "coverage": {
-    "status": "active",
-    "plan_name": "UHC Choice Plus PPO",
-    "plan_type": "PPO",
-    "effective_date": "2026-01-01",
-    "term_date": "2026-12-31"
-  },
-  "financial": {
-    "copay": {
-      "amount": 30.00,
-      "currency": "USD",
-      "type": "office_visit"
-    },
-    "deductible": {
-      "individual_total": 2500.00,
-      "individual_remaining": 1200.00,
-      "family_total": 5000.00,
-      "family_remaining": 3500.00
-    },
-    "coinsurance": {
-      "in_network_percent": 20,
-      "out_of_network_percent": 40
-    },
-    "out_of_pocket_max": {
-      "individual": 6500.00,
-      "family": 13000.00
-    }
-  },
-  "authorization": {
-    "required": false,
-    "service_types": []
-  },
-  "data_quality": {
-    "completeness_score": 0.95,
-    "missing_fields": [],
-    "ambiguous_fields": []
-  }
-}
-```
+normalize_bcbs.py is the Blue Cross Blue Shield parser. BCBS varies significantly by state so this may need state-specific sub-parsers for Oklahoma versus Texas versus California plans.
+
+confidence_scorer.py scores every normalized result on three dimensions. Field completeness carries 40% weight and measures what percentage of canonical fields returned non-null values. Value plausibility carries 30% weight and checks whether numeric values fall within the expected ranges captured in the payer profile for this client. Payer pattern match carries 30% weight and compares this response format against the format_patterns field in the payer profile. The overall confidence score is the weighted average. Before the payer profile exists (before onboarding history ingestion), the scorer uses conservative default ranges. After the profile exists, it uses client-specific baselines which are far more accurate.
+
+learning_engine.py does two things. At the start of every verification run, it reads the payer profile from DynamoDB for this client and payer combination and passes it to confidence_scorer.py as the scoring baseline. After every human correction logged by Room 4, it reads the correction from DynamoDB, identifies whether this correction represents a new pattern (a field that is consistently wrong for this payer at this practice), and if so generates an updated parsing rule and writes it back to the payer profile. Over time the payer profile becomes a rich document of everything that makes this practice unique in how their payers respond.
+
+## Confidence Score Thresholds
+
+Above 95% means auto-push. The result goes directly to Room 4 ehr_poster.py for writing to the EHR with no human review needed.
+
+Between 80% and 95% means human review. The result goes to Room 4 review queue with the specific uncertain fields highlighted in yellow. Staff edits individual fields and clicks Push to EHR.
+
+Below 80% means staff alert. The result does not go to the EHR. Staff gets an actionable notification explaining exactly which fields failed and what manual steps to take.
+
+## Rules
+
+- Load the payer profile from DynamoDB at the start of every verification run before scoring begins
+- Try Python regex parsing first for well-structured responses. Only invoke Claude via Bedrock for genuinely ambiguous cases to save money
+- Always attach raw_response to the normalized output for the review queue side-by-side view
+- Never auto-push below 95% confidence under any circumstances
+- Never delete correction logs from DynamoDB. They are the training data for learning_engine.py and the HIPAA audit trail
+- Store confidence thresholds in per-client config, not hardcoded. Some practices may want 98% before auto-push
+- When learning_engine.py generates a new parsing rule, log the rule in human-readable form so any engineer can audit what the system learned and why

@@ -1,84 +1,119 @@
-# CONTEXT.md — Room 4: Delivery
-
+﻿# CONTEXT.md — 4_delivery (EHR Writing, Review Queue, Analytics, Alerts)
 ## Purpose
-Take the clean benefits object from /3_normalization, write it to the EHR, alert staff if anything needs human attention, and create the HIPAA audit log entry.
+Writes verified benefits to EHR, provides review queue for uncertain results, tracks analytics for ROI visibility, sends staff alerts. This is what the doctor sees daily.
 
-## The Process (Step by Step)
-1. Receive canonical benefits object from /3_normalization
-2. Look up which EHR this client uses (Dr. Chrono, TherapyNotes via Keragon, etc.)
-3. Format the data for that specific EHR's API
-4. Write benefits to the patient's appointment record
-5. If status is "active" and complete → done, log success
-6. If status is "inactive" → alert front desk via dashboard
-7. If prior auth required → flag for /paula (when PAULA agent exists) or human queue
-8. If data quality score < 0.80 → flag for human review
-9. Create HIPAA audit log entry (always)
-10. Update client dashboard metrics (verifications today, success rate, etc.)
+## Key Files
+- ehr_poster.py — writes to Dr. Chrono API
+- audit_logger.py — HIPAA CloudWatch logging (7 year retention)
+- notifier.py — staff alerts via SMS/email/Slack
+- review_queue.py — NEW: editable review interface with queue states (Pending, In Review, Corrected, Auto-Pushed, Failed)
+- analytics_tracker.py — NEW: verifications/month, confidence trending, Path A vs B, error rate by payer, time saved, cost per verification
 
-## Identity & Audience
-- Who uses this room: Front desk staff (via dashboard alerts), EHR system, audit logs
-- Tone of voice: Staff-facing alerts should be plain English, action-oriented
-- What "good" looks like here: Front desk knows EXACTLY what to do for each patient before they arrive. No surprises at check-in. Audit trail is bulletproof.
+## Dashboard (React app)
+Sidebar: Agents, Workflows, Queue, Analytics, Settings
+Main view: metric cards, confidence trend chart, volume by payer, attention-needed table
 
-## Tech Stack For This Room
-- **AWS Lambda** — orchestration
-- **Dr. Chrono API** (default EHR) — direct REST integration
-- **Keragon** (when needed) — bridge for TherapyNotes and other no-API EHRs
-- **AWS CloudWatch Logs** — HIPAA audit trail (encrypted, immutable, 7-year retention)
-- **AWS SNS / Twilio** — staff alerts
-- **DynamoDB** — dashboard metrics
+## Rules
+- Always write audit log BEFORE writing to EHR
+- Never display full patient names (first initial + last only)
+- Never delete review queue items (state changes only)
+- Always log human corrections for Room 3 learning engine
+- Always include actionable instructions in staff alerts
+# incident_manager.py — Automated Runbook and Self-Healing System
+# Belongs in: 4_delivery/code/incident_manager.py
+# Triggered by: CloudWatch Alarms via Lambda
 
-## Patterns to Follow
-- ALWAYS write the audit log BEFORE writing to the EHR (audit even on EHR write failure)
-- Format alert messages for the human reading them — not the developer
-- Include the verification timestamp on every EHR write
-- Use idempotency keys to prevent duplicate writes
-- Batch dashboard metric updates (not real-time per call)
+## What This File Does
 
-## Alert Message Templates (Front Desk)
+This module is ARIA's immune system. When something goes wrong anywhere in the
+pipeline, this file wakes up, figures out what happened, tries to fix it
+automatically if possible, and writes a complete incident record to DynamoDB
+regardless of whether the fix succeeded. The result is a self-writing runbook
+that documents every problem and resolution without any human intervention.
 
-**Active Coverage:**
-> ✅ [Patient Name] verified. Copay $30. Deductible: $1,200 of $2,500 remaining. Plan: UHC Choice Plus PPO.
+## The Five Incident Severity Levels
 
-**Inactive Coverage:**
-> ⚠️ [Patient Name] insurance is INACTIVE. Coverage ended [date]. Call patient to confirm new insurance before appointment on [date].
+SEV-1 means PHI is at risk or HIPAA audit logging has failed. This pages Adam
+immediately and halts all verification processing until resolved manually. This
+level should almost never trigger if the architecture is correctly implemented.
 
-**Prior Auth Required:**
-> 🔔 [Patient Name] coverage is active BUT prior authorization required for [service type]. Submit auth request before appointment.
+SEV-2 means verification is completely down for one or more payers. Patients
+are not getting verified. Adam gets an immediate SMS and the incident manager
+attempts auto-recovery.
 
-**Data Quality Issue:**
-> 🔍 [Patient Name] verified but some fields unclear. Please review benefits manually before appointment.
+SEV-3 means verification is degraded — higher than normal error rates, slower
+than normal response times, or elevated human review rates. Adam gets a
+notification within fifteen minutes. Auto-recovery is attempted.
 
-## Never Do This (Constraints)
-- NEVER write to the EHR without first writing the audit log
-- NEVER send alerts containing full patient names + DOB in the same SMS (PHI exposure)
-- NEVER skip the audit log "to save costs" — HIPAA fines are way more expensive
-- NEVER mark a verification "complete" if EHR write failed — flag it for retry
-- NEVER expose the dashboard publicly (always behind auth)
+SEV-4 means a single verification failed but the system is otherwise healthy.
+The incident is logged automatically and the verification is retried. Adam gets
+a daily digest rather than an immediate alert.
 
-## Skills To Load (Layer 3)
-When working in this room, also load:
-- `skills/drchrono-api.md` — Dr. Chrono REST patterns
-- `skills/keragon-bridge.md` — using Keragon for non-API EHRs
-- `skills/hipaa-audit-logging.md` — exact log format requirements
-- `skills/staff-alerts.md` — alert template patterns
+SEV-5 means a minor anomaly was detected but resolved itself. Logged for
+pattern analysis only. No alert sent.
 
-## HIPAA Audit Log Format (Required)
+## Auto-Recovery Playbook (What the System Fixes Itself)
 
-Every action gets logged to CloudWatch in this exact shape:
+Expired Availity OAuth token: incident manager calls get_availity_token() to
+refresh the credential in Secrets Manager, then retries the failed
+verification. Logs the refresh event with the new token expiration time.
 
-```json
-{
-  "timestamp": "2026-04-30T03:15:35Z",
-  "event_type": "verification_completed",
-  "client_id": "client_drchrono_001",
-  "patient_id_hash": "hash_abc123",
-  "appointment_id": "appt_xyz789",
-  "actor": "aria_agent_v1.0",
-  "action": "wrote_benefits_to_ehr",
-  "result": "success",
-  "data_classification": "PHI",
-  "ip_address": "10.0.1.45",
-  "request_id": "req_unique_id_here"
-}
-```
+Skyvern task timeout: incident manager resubmits the task with a higher
+max_steps limit and a fresh browser session. If it fails again, escalates to
+SEV-2 and alerts Adam.
+
+Lambda cold start timeout: incident manager increases the Lambda timeout
+setting via AWS SDK, then retries. Logs the new timeout value.
+
+DynamoDB throughput exceeded: incident manager switches the table to
+on-demand billing mode temporarily, then logs the capacity event so Adam can
+review whether the provisioned capacity needs a permanent increase.
+
+Availity API 5xx error: incident manager waits 60 seconds and retries up to
+three times. If all retries fail, checks Availity status page via HTTP and
+includes the status in the incident record so Adam immediately knows whether
+it is an Availity outage or a local issue.
+
+## The Incident Record Schema (Written to DynamoDB incidents table)
+
+incident_id: UUID generated at incident creation time
+client_id: which practice this incident belongs to
+timestamp: ISO format UTC timestamp when the incident was detected
+severity: SEV-1 through SEV-5
+room: which room the error originated in (1_intake, 2_verification, etc.)
+error_type: short category label like TOKEN_EXPIRED or SKYVERN_TIMEOUT
+error_message: the raw error message from CloudWatch
+stack_trace: the full Python traceback if available
+payer: which payer was being processed when the error occurred
+claude_diagnosis: the plain-English explanation Claude generated via Bedrock
+claude_recommended_fix: the step-by-step fix Claude recommended
+auto_resolution_attempted: boolean
+auto_resolution_successful: boolean
+auto_resolution_description: what the auto-recovery code actually did
+manual_resolution_notes: field for Adam to fill in if manual fix was needed
+status: open, auto-resolved, manually-resolved, or escalated
+time_to_resolution_seconds: calculated when status changes from open
+
+## The Claude Bedrock Call (How ARIA Thinks About Its Own Errors)
+
+The incident manager sends Claude this prompt with the error context filled in:
+"You are analyzing an error in ARIA, a healthcare insurance verification
+system. Here is the error context: [error message, stack trace, room, payer,
+last ten CloudWatch log lines]. Provide three things: first, a one-sentence
+plain English explanation of what went wrong suitable for a non-technical
+medical practice owner. Second, a technical root cause diagnosis. Third, a
+recommended fix with specific steps. Format your response as JSON with keys
+explanation, root_cause, and recommended_fix."
+
+Claude returns structured JSON that the incident manager parses and stores
+directly into the DynamoDB incident record. No human has to write anything.
+
+## The Morning Digest
+
+Every day at 7am local time for the client, the incident manager sends a
+daily digest SMS and email summarizing the previous 24 hours: total
+verifications processed, number of incidents detected, number auto-resolved,
+number requiring manual attention, and the current system health status as a
+single emoji — green circle for healthy, yellow circle for degraded, red
+circle for down. The doctor sees one message every morning that tells her
+everything she needs to know about how ARIA performed overnight.

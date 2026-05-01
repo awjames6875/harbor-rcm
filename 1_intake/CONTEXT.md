@@ -1,63 +1,33 @@
-# CONTEXT.md — Room 1: Intake
+﻿# CONTEXT.md — 1_intake (Patient Data Intake)
 
 ## Purpose
-Receive new patient appointments from the EHR (or batch CSV upload), validate the data, and prepare it for verification.
+Handles every way patient data enters ARIA: real-time EHR webhooks, CSV batch uploads, scanned document OCR extraction, and one-time historical data ingestion at client onboarding. Data always leaves this room as a validated patient dictionary for Room 2, or as a structured payer profile written to DynamoDB.
 
-## The Process (Step by Step)
-1. EHR webhook fires when a new appointment is scheduled (or staff uploads a CSV batch)
-2. Parse the patient data: first name, last name, DOB, insurance company, member ID, group number
-3. Validate required fields are present and formatted correctly
-4. Check for duplicates (same patient verified in last 24 hours)
-5. If valid → forward to /2_verification with structured payload
-6. If invalid → log error, alert staff via dashboard, halt workflow
+## The Two Modes This Room Operates In
 
-## Identity & Audience
-- Who uses this room: Front desk staff, schedulers, automated EHR webhooks
-- Tone of voice: Internal/technical (no patient-facing copy here)
-- What "good" looks like here: Zero invalid data passed downstream. Every error logged with reason. Duplicate detection saves API costs.
+Understanding the distinction between these two modes is critical. Real-time mode runs every day once ARIA is live — a patient appointment arrives, gets validated, and flows through the pipeline in seconds. Onboarding mode runs exactly once when a new client is installed — it ingests twelve months of historical data so ARIA understands the client specific payer mix before it ever processes a live patient. Think of onboarding mode like giving a new employee a full year of company history to read on their first day before they take their first phone call.
 
-## Tech Stack For This Room
-- **AWS Lambda** — receives webhook from EHR
-- **AWS API Gateway** — public endpoint with API key auth
-- **DynamoDB** — duplicate detection cache (24h TTL)
-- **Pydantic** (Python) — data validation schemas
+## Key Files
 
-## Patterns to Follow
-- Always validate BEFORE forwarding to verification (catch errors cheap)
-- Use structured logging: `{timestamp, action, patient_id_hash, status}`
-- Hash patient identifiers in logs (never log raw PHI)
-- Return 200 OK to webhooks immediately, then process async
+webhook_handler.py handles EHR appointment triggers arriving via HTTP POST in real time.
 
-## Never Do This (Constraints)
-- NEVER log raw patient PHI (names, member IDs, DOBs in plain text)
-- NEVER skip validation to "save time" — invalid data downstream costs more
-- NEVER call Availity directly from this room — that's /2_verification's job
-- NEVER store patient data here longer than 24 hours
+input_validator.py validates every incoming patient record using Pydantic. Required fields are first_name, last_name, dob (YYYY-MM-DD), member_id, and payer.
 
-## Skills To Load (Layer 3)
-When working in this room, also load:
-- `skills/csv-parser.md` — for batch upload handling
-- `skills/pydantic-schemas.md` — validation patterns
-- `skills/webhook-security.md` — API key + signature verification
+batch_processor.py handles CSV upload mode. Validates each row, separates valid from invalid, reports results, passes only valid rows to Room 2.
 
-## Data Shape (What This Room Outputs to /2_verification)
+ocr_extractor.py handles scanned forms, faxes, and handwritten documents via Claude/Bedrock OCR. Returns structured field values with per-field confidence scores. Low-confidence fields flagged for human review.
 
-```json
-{
-  "patient_id": "hash_abc123",
-  "appointment_id": "appt_xyz789",
-  "patient": {
-    "first_name": "Maria",
-    "last_name": "Gonzalez",
-    "dob": "1985-04-12",
-    "member_id": "UHC8472910"
-  },
-  "payer": {
-    "name": "UnitedHealthcare",
-    "code": "UHC",
-    "portal": "availity"
-  },
-  "appointment_time": "2026-05-15T09:00:00-05:00",
-  "priority": "T-48"
-}
-```
+history_ingester.py is NEW and runs only during client onboarding. Connects to the client EHR or billing system, pulls all eligibility checks and claims from the past twelve months, feeds them through Room 3 normalization in batch mode, and writes payer profiles to DynamoDB. These profiles give ARIA a baseline understanding of the client specific payer mix before any live patient is processed. This is the equivalent of what XY.ai described as training the agent on your business.
+
+## What a Payer Profile Contains (Written to DynamoDB by history_ingester.py)
+
+Each payer profile captures everything ARIA learned from twelve months of historical transactions for one payer at one practice. The fields are: client_id (which practice), payer_id (Availity payer identifier), sample_size (how many transactions were analyzed), field_presence (dictionary mapping each canonical field to the percentage of responses where it had a value), value_ranges (typical numeric ranges for copay, deductible, OOP max at this practice), format_patterns (payer-specific quirks found in the data, such as UHC returning copay in cents not dollars), and denial_rate (historical percentage of inactive or denied coverage results for this payer).
+
+## Rules
+
+- Always validate before forwarding to Room 2
+- Never log raw PHI to CloudWatch, always hash patient identifiers
+- Never auto-correct ambiguous OCR values, flag for human review
+- Never send to Room 2 if member_id is missing
+- Never run history_ingester.py while live ARIA traffic is flowing (batch job competes for DynamoDB write capacity)
+- Client must have signed BAA before history_ingester.py runs. See docs/training-protocol.md.
