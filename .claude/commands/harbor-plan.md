@@ -6,13 +6,13 @@ description: Draft an implementation plan for a Harbor RCM room with autonomous 
 
 Usage: `/harbor:plan <room> <topic>`
 
-Example: `/harbor:plan 2_verification add Availity UHC integration`
+Example: `/harbor:plan 2_check-coverage add Availity UHC integration`
 
 ## What you do
 
 **Step 1 — Parse arguments**
 
-Extract the first word after `/harbor:plan` as `<room>` (one of: `1_intake`, `2_verification`, `3_normalization`, `4_delivery`).
+Extract the first word after `/harbor:plan` as `<room>` (one of: `1_patient-arrives`, `2_check-coverage`, `3_clean-the-response`, `4_send-and-log`).
 Everything after the room name is the `<topic>`.
 
 **Step 2 — Initialize the loop**

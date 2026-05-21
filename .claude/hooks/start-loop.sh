@@ -7,7 +7,7 @@ TOPIC="${2:-}"
 
 if [ -z "$ROOM" ] || [ -z "$TOPIC" ]; then
   echo "Usage: bash .claude/hooks/start-loop.sh <room> \"<topic>\""
-  echo "Example: bash .claude/hooks/start-loop.sh 2_verification \"add Availity UHC integration\""
+  echo "Example: bash .claude/hooks/start-loop.sh 2_check-coverage \"add Availity UHC integration\""
   exit 1
 fi
 
@@ -21,12 +21,19 @@ if [ -f ".claude/state/loop.yaml" ]; then
   fi
 fi
 
+# Room 1 has no PHI contact — skip Codex review. Rooms 2/3/4 require full review.
+if [ "$ROOM" = "1_patient-arrives" ]; then
+  MAX_ROUNDS=0
+else
+  MAX_ROUNDS=3
+fi
+
 mkdir -p .claude/state
 
 cat > .claude/state/loop.yaml << EOF
 phase: drafting
 round: 0
-max_rounds: 3
+max_rounds: $MAX_ROUNDS
 topic: "$TOPIC"
 room: "$ROOM"
 plan_path: "$ROOM/PLAN.md"

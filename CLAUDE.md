@@ -21,14 +21,14 @@ Adam has ADHD. ALWAYS:
 
 This repo is **pre-implementation** — architecture and documentation only. Each room currently contains a `CONTEXT.md` and empty `code/`, `skills/`, `tests/` stubs.
 
-**Exception: `2_verification/` is the most active room.** Its `CONTEXT.md` lists the planned Python files:
+**Exception: `2_check-coverage/` is the most active room.** Its `CONTEXT.md` lists the planned Python files:
 - `availity_client.py` — 270/271 Availity REST API calls
 - `skyvern_runner.py` — Skyvern browser automation fallback
 - `verification_handler.py` — orchestrator (tries Path A first, falls back to Path B)
 - `workflow_swapper.py` — self-healing: auto-replaces a broken Skyvern recording with a new one
 - `payer_router.py` — maps payers to their path (API or Skyvern) and workflow JSON
 
-The `2_verification/workflows/` folder exists for Skyvern workflow JSONs; `workflows/archive/` stores superseded recordings with timestamps.
+The `2_check-coverage/workflows/` folder exists for Skyvern workflow JSONs; `workflows/archive/` stores superseded recordings with timestamps.
 
 There is no `package.json`, `pyproject.toml`, `requirements.txt`, lockfile, CI config, or test runner yet. When you write the first code in a room, create the matching `requirements.txt` / `pytest` config in that room's folder.
 
@@ -38,11 +38,11 @@ The `skills/*.md` files referenced in each room's `CONTEXT.md` **do not exist ye
 
 | Task | Go to | Read |
 | ------ | ------ | ------ |
-| Receive new patient appointment | /1_intake | CONTEXT.md |
-| Run insurance verification | /2_verification | CONTEXT.md |
-| Parse messy 271 response | /3_normalization | CONTEXT.md |
-| Write results back to EHR | /4_delivery | CONTEXT.md |
-| Add a new payer integration | /2_verification | CONTEXT.md, then docs/PRD.md |
+| Receive new patient appointment | /1_patient-arrives | CONTEXT.md |
+| Run insurance verification | /2_check-coverage | CONTEXT.md |
+| Parse messy 271 response | /3_clean-the-response | CONTEXT.md |
+| Write results back to EHR | /4_send-and-log | CONTEXT.md |
+| Add a new payer integration | /2_check-coverage | CONTEXT.md, then docs/PRD.md |
 | Fix a verification bug | Read the relevant room's CONTEXT.md FIRST |
 | Add a new agent (PAULA, EVA, etc.) | /docs | PRD.md, then duplicate ARIA pattern |
 | Update pricing or business model | /docs | PRD.md |
@@ -66,31 +66,31 @@ ARIA is a linear data pipeline. Each room is a Lambda-style transform that consu
 EHR webhook / CSV
         │
         ▼
-┌──────────────────┐    patient + payer payload
-│ 1_intake         │    (validated, deduplicated)
-│ Lambda + Pydantic│────────────────────┐
-└──────────────────┘                    ▼
-                              ┌──────────────────┐    raw 271 + screenshots
-                              │ 2_verification   │    (Availity API or
-                              │ Skyvern + Availity│   Skyvern portal scrape)
-                              └──────────────────┘────────────────┐
-                                                                  ▼
-                                                        ┌──────────────────┐    canonical benefits
-                                                        │ 3_normalization  │    object (payer-agnostic,
-                                                        │ Python + Pydantic│    schema-versioned)
-                                                        └──────────────────┘──────┐
-                                                                                  ▼
-                                                                        ┌──────────────────┐
-                                                                        │ 4_delivery       │
-                                                                        │ EHR + alerts +   │
-                                                                        │ HIPAA audit log  │
-                                                                        └──────────────────┘
+┌──────────────────────┐    patient + payer payload
+│ 1_patient-arrives    │    (validated, deduplicated)
+│ Lambda + Pydantic    │────────────────────┐
+└──────────────────────┘                    ▼
+                              ┌──────────────────────┐    raw 271 + screenshots
+                              │ 2_check-coverage     │    (Availity API or
+                              │ Skyvern + Availity   │    Skyvern portal scrape)
+                              └──────────────────────┘────────────────┐
+                                                                      ▼
+                                                        ┌──────────────────────┐    canonical benefits
+                                                        │ 3_clean-the-response │    object (payer-agnostic,
+                                                        │ Python + Pydantic    │    schema-versioned)
+                                                        └──────────────────────┘──────┐
+                                                                                      ▼
+                                                                        ┌──────────────────────┐
+                                                                        │ 4_send-and-log       │
+                                                                        │ EHR + alerts +       │
+                                                                        │ HIPAA audit log      │
+                                                                        └──────────────────────┘
 ```
 
 **Key invariants:**
-- `2_verification` tries the Availity API first (cheap, fast); only falls back to Skyvern when no API exists for that payer.
-- `3_normalization` outputs the same canonical schema regardless of input payer. One normalizer function per payer.
-- `4_delivery` writes the audit log **before** writing to the EHR (audit even on EHR failure).
+- `2_check-coverage` tries the Availity API first (cheap, fast); only falls back to Skyvern when no API exists for that payer.
+- `3_clean-the-response` outputs the same canonical schema regardless of input payer. One normalizer function per payer.
+- `4_send-and-log` writes the audit log **before** writing to the EHR (audit even on EHR failure).
 - `workflow_swapper.py` is the self-healing layer — when a Skyvern recording breaks, it triggers a re-record and archives the old one. Never edit workflow JSONs directly.
 - PHI never leaves the client's AWS account. Adam never touches PHI.
 
@@ -106,23 +106,23 @@ For the exact JSON shape of each handoff, see the `## Data Shape` section in the
 - Documentation: `YYYY-MM-DD-topic.md` (e.g., `2026-04-30-availity-integration.md`)
 - Code files: `snake_case.py`
 - Test data: `data/test-[scenario].json`
-- Skyvern workflows: `2_verification/workflows/[payer]-[action].json` (archived versions in `workflows/archive/`)
+- Skyvern workflows: `2_check-coverage/workflows/[payer]-[action].json` (archived versions in `workflows/archive/`)
 - Patient data (TEST ONLY): `data/test-patients/[name].json`
 
 ## Critical Rules (Apply Everywhere)
 1. **Never commit secrets.** Use `.env.local` (gitignored). Production secrets go in AWS Secrets Manager.
 2. **Never process real PHI without a signed BAA.** Sandbox data only during development.
 3. **Always update the relevant room's CONTEXT.md when behavior changes.**
-4. **Never bleed context between rooms.** If you're in /2_verification, don't reference /3_normalization rules.
+4. **Never bleed context between rooms.** If you're in /2_check-coverage, don't reference /3_clean-the-response rules.
 5. **Ask 3-4 clarifying questions before building anything new.**
 6. **Every agent action must be logged.** HIPAA audit trail: timestamp + user + action + outcome.
 7. **Sandbox → Staging → Production.** Never skip steps.
 8. **One client = one AWS account.** Never multi-tenant. Each install is isolated.
 
 ## Adversarial Review Rule
-Before writing code that touches PHI (any code under /2_verification, /3_normalization, or /4_delivery), the workflow is:
+Before writing code that touches PHI (any code under /2_check-coverage, /3_clean-the-response, or /4_send-and-log), the workflow is:
 1. Claude Code drafts the plan in plan mode.
-2. Run `/codex adversarial-review` scoped to the relevant room (e.g. `/codex adversarial-review 2_verification/`).
+2. Run `/codex adversarial-review` scoped to the relevant room (e.g. `/codex adversarial-review 2_check-coverage/`).
 3. Apply Codex's feedback to the plan.
 4. Only then write code.
 
@@ -143,7 +143,7 @@ For non-PHI work (demo HTML, sales copy, marketing pages), skip Codex — Claude
 | Database | DynamoDB | HIPAA-eligible on AWS |
 | CRM | GoHighLevel | Adam's existing client portal |
 
-## Verification Path Logic (Critical — Read Before Touching 2_verification)
+## Verification Path Logic (Critical — Read Before Touching 2_check-coverage)
 
 ARIA uses TWO paths to verify insurance. Always try Path A first.
 Path B is the fallback ONLY when Path A is not available.
@@ -207,7 +207,7 @@ It costs 50x more and is slower. API first. Always.
 - Setup fee is 100% non-refundable, paid before install starts
 
 **Architecture pattern (every agent follows this):**
-- Same 4-room structure (intake → verification/processing → normalization → delivery)
+- Same 4-room structure (patient-arrives → check-coverage → clean-the-response → send-and-log)
 - Agents are sibling folders: `aria/`, `paula/` (future), `cam/` (future)
 - Each agent has its own routing table inside its folder
 
@@ -242,7 +242,7 @@ It costs 50x more and is slower. API first. Always.
 
 ## Confidence Scoring Thresholds (XY.ai Intelligence — Apply Everywhere)
 
-Every verification result that passes through Room 3 normalization gets a confidence score before it reaches Room 4 delivery. These thresholds are non-negotiable and apply across all rooms:
+Every verification result that passes through Room 3 (clean-the-response) gets a confidence score before it reaches Room 4 (send-and-log). These thresholds are non-negotiable and apply across all rooms:
 
 - Above 95%: AUTO-PUSH directly to EHR. No human review needed. Staff gets a success notification.
 - Between 80% and 95%: HUMAN REVIEW QUEUE. Result appears in the review dashboard with uncertain fields highlighted in yellow. Staff edits and clicks Push to EHR.
@@ -263,7 +263,7 @@ When a payer portal changes its UI, ARIA does not break permanently. Instead:
 1. The broken Skyvern task logs a failure and alerts staff
 2. Staff records the new portal process once using Workflow-Use Chrome extension
 3. workflow_swapper.py detects which payer the new recording belongs to by matching the URL
-4. It archives the old recording to 2_verification/workflows/archive/ with a timestamp suffix
+4. It archives the old recording to 2_check-coverage/workflows/archive/ with a timestamp suffix
 5. It deploys the new recording as the active workflow for that payer
 6. The next verification for that payer uses the new recording automatically
 
@@ -279,7 +279,6 @@ Harbor RCM structural advantage: Availity API at $0.003 per verification vs XY b
 
 Full competitive intelligence is in docs/XY-AI-Reverse-Engineering-Report.md. Read Part 6 for build priority order and Part 7 for the dashboard UI spec based on actual XY platform screenshots.
 
-
 ---
 
 ## When To Build These Features
@@ -287,15 +286,15 @@ Full competitive intelligence is in docs/XY-AI-Reverse-Engineering-Report.md. Re
 This section exists because Adam will not always remember what has been designed. When a situation below arises during development, read the corresponding note and build the referenced file.
 
 TRIGGER: You just closed the first client and are setting up their AWS account.
-BUILD: 1_intake/code/history_ingester.py
+BUILD: 1_patient-arrives/code/history_ingester.py
 WHY: Trains ARIA on twelve months of client historical data before any live patient is processed. Without it ARIA starts blind. See docs/training-protocol.md before running this file.
 
 TRIGGER: Something broke in production and you are staring at a CloudWatch error.
-BUILD: 4_delivery/code/incident_manager.py
-WHY: ARIA self-healing immune system. Watches CloudWatch, uses Claude via Bedrock to diagnose errors in plain English, attempts automatic fixes for known problems like expired tokens and timed-out Skyvern tasks, and writes every incident to DynamoDB permanently. See the incident_manager.py spec at the bottom of 4_delivery/CONTEXT.md.
+BUILD: 4_send-and-log/code/incident_manager.py
+WHY: ARIA self-healing immune system. Watches CloudWatch, uses Claude via Bedrock to diagnose errors in plain English, attempts automatic fixes for known problems like expired tokens and timed-out Skyvern tasks, and writes every incident to DynamoDB permanently. See the incident_manager.py spec at the bottom of 4_send-and-log/CONTEXT.md.
 
 TRIGGER: Staff are correcting the same field repeatedly for the same payer.
-ENHANCE: 3_normalization/code/learning_engine.py
+ENHANCE: 3_clean-the-response/code/learning_engine.py
 WHY: Repeated corrections mean the learning engine has not generated a parsing rule for that pattern yet. Pull correction logs from DynamoDB for that client and payer, identify the pattern, and update the payer profile so ARIA handles it automatically going forward.
 
 TRIGGER: You have three or more clients live and support is taking more than two hours per week.
@@ -303,7 +302,7 @@ BUILD: Multi-client monitoring dashboard aggregating CloudWatch from all client 
 WHY: Watching three separate AWS consoles is unsustainable. Do not build this before three clients.
 
 TRIGGER: A portal stopped working after an insurance company redesigned their website.
-USE: 2_verification/code/workflow_swapper.py
+USE: 2_check-coverage/code/workflow_swapper.py
 WHY: Sit with staff for fifteen minutes, record the new process with Workflow-Use, drop the new JSON into the workflows folder. Should take thirty minutes from alert to resolution.
 
 TRIGGER: Preparing for a demo or new client install.
@@ -314,4 +313,4 @@ TRIGGER: A prospect asks how ARIA gets smarter over time.
 EXPLAIN: Three-stage self-improvement loop. Stage one is the historical baseline from history_ingester.py at onboarding. Stage two is the confidence scorer anchoring every live verification against that baseline. Stage three is the learning engine logging every human correction and generating updated parsing rules. After six months ARIA knows the practice as well as an experienced billing specialist who has worked there for six months.
 
 TRIGGER: Building something new and not sure which room it belongs in.
-RULE: Receives or validates incoming data belongs in Room 1. Executes a verification belongs in Room 2. Parses scores or learns from results belongs in Room 3. Writes to EHR alerts staff or logs to CloudWatch belongs in Room 4. If it fits none of these four rooms question whether it belongs in ARIA at all or whether it is the beginning of a new agent like PAULA or EVA.
+RULE: Receives or validates incoming data belongs in 1_patient-arrives. Executes a verification belongs in 2_check-coverage. Parses scores or learns from results belongs in 3_clean-the-response. Writes to EHR alerts staff or logs to CloudWatch belongs in 4_send-and-log. If it fits none of these four rooms question whether it belongs in ARIA at all or whether it is the beginning of a new agent like PAULA or EVA.

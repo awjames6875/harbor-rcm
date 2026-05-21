@@ -1,7 +1,7 @@
-# PLAN — verification_handler.py (Orchestrator)
+# PLAN — workflow_swapper.py: Self-Healing Skyvern Workflow Replacement
 
 **Room:** 2_check-coverage  
-**Topic:** Build verification_handler orchestrator using payer_router  
+**Topic:** Build workflow_swapper self-healing layer for broken Skyvern workflows  
 **Status:** DRAFT — Round 0
 
 ---

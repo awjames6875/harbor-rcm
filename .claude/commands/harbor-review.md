@@ -2,7 +2,7 @@
 description: Codex audit scoped to a Harbor RCM room, focused on PHI/HIPAA/Path-A-vs-B correctness
 ---
 
-Run `/codex adversarial-review` on the path the user names (e.g. `2_verification/`, `3_normalization/`, or a specific file).
+Run `/codex adversarial-review` on the path the user names (e.g. `2_check-coverage/`, `3_clean-the-response/`, or a specific file).
 
 Focus the audit on these Harbor-specific concerns:
 1. **PHI handling** — no PHI in logs, no PHI in error messages, no PHI outside encrypted stores (DynamoDB, S3 with SSE).

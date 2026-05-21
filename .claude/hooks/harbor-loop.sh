@@ -14,7 +14,7 @@ phase=$(grep '^phase:' "$STATE_FILE" | awk '{print $2}')
 round=$(grep '^round:' "$STATE_FILE" | awk '{print $2}')
 max_rounds=$(grep '^max_rounds:' "$STATE_FILE" | awk '{print $2}')
 room=$(grep '^room:' "$STATE_FILE" | awk '{print $2}')
-plan_path=$(grep '^plan_path:' "$STATE_FILE" | awk '{print $2}')
+plan_path=$(grep '^plan_path:' "$STATE_FILE" | awk '{print $2}' | tr -d '"')
 
 # Done or cancelled — clean up and allow exit
 if [ "$phase" = "done" ] || [ "$phase" = "cancelled" ]; then

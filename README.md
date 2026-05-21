@@ -16,25 +16,25 @@ harbor-rcm/
 ├── docs/
 │   └── PRD.md                   ← Full Product Requirements Document
 │
-├── 1_intake/                    ← Layer 2: Room 1
+├── 1_patient-arrives/           ← Layer 2: Room 1
 │   ├── CONTEXT.md               ← Specific rules for this room
 │   ├── skills/                  ← Layer 3: Skills loaded only here
 │   ├── code/                    ← Layer 3: Code for this room
 │   └── tests/
 │
-├── 2_verification/              ← Layer 2: Room 2
+├── 2_check-coverage/            ← Layer 2: Room 2
 │   ├── CONTEXT.md
 │   ├── skills/
 │   ├── code/
 │   └── tests/
 │
-├── 3_normalization/             ← Layer 2: Room 3
+├── 3_clean-the-response/        ← Layer 2: Room 3
 │   ├── CONTEXT.md
 │   ├── skills/
 │   ├── code/
 │   └── tests/
 │
-└── 4_delivery/                  ← Layer 2: Room 4
+└── 4_send-and-log/              ← Layer 2: Room 4
     ├── CONTEXT.md
     ├── skills/
     ├── code/
@@ -49,7 +49,7 @@ harbor-rcm/
 2. Run `claude` from the terminal (Claude Code reads CLAUDE.md automatically)
 3. Ask Claude to do something like "fix the verification bug"
 4. Claude reads the routing table in CLAUDE.md
-5. Claude opens ONLY `2_verification/CONTEXT.md`
+5. Claude opens ONLY `2_check-coverage/CONTEXT.md`
 6. Claude does the work without burning tokens on irrelevant files
 
 **Token comparison:**

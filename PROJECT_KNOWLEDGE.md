@@ -35,10 +35,10 @@ I follow Jake Van Clief's 3-Layer Folder Architecture for token efficiency and c
 **Layer 3 — Skills + Assets:** Loaded only when entering a specific room
 
 The Harbor RCM repo has 4 rooms:
-- `1_intake/` — receive appointments
-- `2_verification/` — run Skyvern + Availity
-- `3_normalization/` — parse messy 271 into clean benefits object
-- `4_delivery/` — write to EHR + alert staff + audit log
+- `1_patient-arrives/` — receive appointments
+- `2_check-coverage/` — run Skyvern + Availity
+- `3_clean-the-response/` — parse messy 271 into clean benefits object
+- `4_send-and-log/` — write to EHR + alert staff + audit log
 
 Each room has its own CONTEXT.md with isolated rules.
 

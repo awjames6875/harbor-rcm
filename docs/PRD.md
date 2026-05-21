@@ -29,13 +29,13 @@ The U.S. healthcare AI market exceeds $37 billion, but virtually all investment 
 
 ## The 4 Rooms (Workflow Phases)
 
-1. **Room 1 — `1_intake/`:** Receives appointment data from EHR webhook or batch CSV. Validates fields. Detects duplicates. Forwards clean payload to verification.
-2. **Room 2 — `2_verification/`:** The core verification engine. Uses TWO paths:
+1. **Room 1 — `1_patient-arrives/`:** Receives appointment data from EHR webhook or batch CSV. Validates fields. Detects duplicates. Forwards clean payload to verification.
+2. **Room 2 — `2_check-coverage/`:** The core verification engine. Uses TWO paths:
    - **Path A (Primary) — Availity REST API:** For major payers (UHC, Aetna, BCBS, Medicare, Cigna). Direct API call — no browser, no Skyvern. Fast ($0.003), reliable, preferred for ~80% of patients.
    - **Path B (Fallback) — Skyvern + Workflow-Use:** For payers not on Availity API (SoonerCare, small regional payers). Skyvern replays a Workflow-Use recorded session in a real browser. Slower ($0.10-0.25) but works for any portal. Used for ~20% of patients.
    - Always tries Path A first. Falls back to Path B automatically if the payer has no API.
-3. **Room 3 — `3_normalization/`:** Parses messy 271 EDI/JSON into canonical benefits object. Same shape regardless of payer. Flags missing or ambiguous fields.
-4. **Room 4 — `4_delivery/`:** Writes benefits to EHR. Sends staff alerts for inactive coverage or prior auth needs. Creates HIPAA audit log. Updates dashboard.
+3. **Room 3 — `3_clean-the-response/`:** Parses messy 271 EDI/JSON into canonical benefits object. Same shape regardless of payer. Flags missing or ambiguous fields.
+4. **Room 4 — `4_send-and-log/`:** Writes benefits to EHR. Sends staff alerts for inactive coverage or prior auth needs. Creates HIPAA audit log. Updates dashboard.
 
 ## Tech Stack
 - **Frontend:** Next.js 14 + TypeScript + Tailwind CSS (client dashboard)
