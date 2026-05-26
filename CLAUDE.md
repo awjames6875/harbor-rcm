@@ -314,3 +314,7 @@ EXPLAIN: Three-stage self-improvement loop. Stage one is the historical baseline
 
 TRIGGER: Building something new and not sure which room it belongs in.
 RULE: Receives or validates incoming data belongs in 1_patient-arrives. Executes a verification belongs in 2_check-coverage. Parses scores or learns from results belongs in 3_clean-the-response. Writes to EHR alerts staff or logs to CloudWatch belongs in 4_send-and-log. If it fits none of these four rooms question whether it belongs in ARIA at all or whether it is the beginning of a new agent like PAULA or EVA.
+## Availity Reference
+Before writing or editing any Availity code, read AVAILITY_API_DOCS.md.
+Never guess at field names, endpoints, or payload structure.
+The most common mistakes are documented at the bottom of that file.

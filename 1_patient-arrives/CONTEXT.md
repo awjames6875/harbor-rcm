@@ -40,4 +40,4 @@ Output shape: `{ patient_name, dob, member_id, payer, provider_npi, appointment_
 - Never auto-correct ambiguous OCR values — flag for human review
 - Never send to Room 2 if `member_id` is missing
 - Never run `history_ingester.py` while live traffic is flowing
-- Client must have signed BAA before `history_ingester.py` runs — see `docs/training-protocol.md` into the excellence and I'm just going to say that oh my god that's a little kind of faster we don't have I just I don't I don't know 
+- Client must have signed BAA before `history_ingester.py` runs — see `docs/training-protocol.md` into the excellence and I'm just going to say that oh my god that's a little kind of faster we don't have I just I don't I don't know What's the date today for tomorrow

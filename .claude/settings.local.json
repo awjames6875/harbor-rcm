@@ -10,7 +10,10 @@
       "Bash(bash *)",
       "Bash(py -m pytest tests/test_payer_router.py -v)",
       "Bash(Test-Path *)",
-      "Bash(py -m pytest tests/test_verification_handler.py -v)"
+      "Bash(py -m pytest tests/test_verification_handler.py -v)",
+      "Bash(py -m pytest tests/ -v)",
+      "Bash(firecrawl scrape *)",
+      "Bash(firecrawl crawl *)"
     ]
   },
   "hooks": {
