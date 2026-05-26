@@ -155,9 +155,13 @@ class SkyvernRunner:
             "payer": payer,
             "outcome": outcome,
         }
-        os.makedirs(os.path.dirname(AUDIT_LOG_PATH), exist_ok=True)
-        with open(AUDIT_LOG_PATH, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        try:
+            os.makedirs(os.path.dirname(AUDIT_LOG_PATH), exist_ok=True)
+            with open(AUDIT_LOG_PATH, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception as exc:
+            import sys
+            print(f"AUDIT_WRITE_FAILED: {exc}", file=sys.stderr)
         if self._cloudwatch_log_group:
             try:
                 logs = boto3.client("logs", region_name=self._aws_region)

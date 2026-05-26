@@ -37,5 +37,13 @@ data/real-patients/
 data/production/
 *.phi.json
 
+# Audit logs (operational data — never commit)
+**/logs/
+**/*.jsonl
+
+# Binaries and installers
+*.pdf
+*.msi
+
 # Harbor loop state (ephemeral, never commit)
 .claude/state/

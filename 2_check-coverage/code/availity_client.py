@@ -184,10 +184,13 @@ class AvailityClient:
             "payer": payer,
             "outcome": outcome,
         }
-        # Always write to local file (useful in dev/sandbox)
-        os.makedirs(os.path.dirname(AUDIT_LOG_PATH), exist_ok=True)
-        with open(AUDIT_LOG_PATH, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        try:
+            os.makedirs(os.path.dirname(AUDIT_LOG_PATH), exist_ok=True)
+            with open(AUDIT_LOG_PATH, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception as exc:
+            import sys
+            print(f"AUDIT_WRITE_FAILED: {exc}", file=sys.stderr)
         # Additionally send to CloudWatch if configured (production)
         if self._cloudwatch_log_group:
             try:
