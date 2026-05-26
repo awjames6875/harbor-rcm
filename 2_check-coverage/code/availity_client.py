@@ -28,7 +28,7 @@ class AvailityAPIError(AvailityError):
 # --- Client ---
 
 AVAILITY_TOKEN_URL = "https://api.availity.com/availity/v1/token"
-AVAILITY_ELIGIBILITY_URL = "https://api.availity.com/availity/v1/eligibility-inquiries"
+AVAILITY_COVERAGES_URL = "https://api.availity.com/availity/v1/coverages"
 TOKEN_REFRESH_BUFFER_SECONDS = 60
 REQUEST_TIMEOUT_SECONDS = 10
 AUDIT_LOG_PATH = "2_check-coverage/logs/audit.jsonl"
@@ -39,7 +39,6 @@ class AvailityClient:
         creds = self._load_credentials(aws_secret_name, aws_region)
         self._client_id: str = creds["client_id"]
         self._client_secret: str = creds["client_secret"]
-        self._trading_partner_id: str = creds["trading_partner_id"]
         self._token: str | None = None
         self._token_expiry: float = 0.0
         self._cloudwatch_log_group: str | None = cloudwatch_log_group
@@ -47,16 +46,26 @@ class AvailityClient:
 
     def check_eligibility(
         self,
-        member_id: str,
-        date_of_birth: str,
+        patient: dict,
         payer_id: str = "UHC",
         provider_npi: str | None = None,
-        service_type_code: str = "30",  # 30 = health benefit plan coverage
+        sandbox: bool = False,
     ) -> dict:
+        """
+        patient = {
+            "member_id": "ABC123",
+            "last_name": "GONZALEZ",
+            "first_name": "MARIA",
+            "birth_date": "1970-01-01",   # YYYY-MM-DD
+            "gender": "F",
+            "state": "OK",
+            "group_number": "12345"
+        }
+        """
         self._ensure_token()
-        hashed_id = self._hash_patient_id(member_id)
+        hashed_id = self._hash_patient_id(patient["member_id"])
         try:
-            response = self._post_eligibility(member_id, date_of_birth, payer_id, provider_npi, service_type_code)
+            response = self._post_coverage(patient, payer_id, provider_npi, sandbox)
         except requests.Timeout:
             self._audit("eligibility_check", hashed_id, payer_id, "timeout")
             raise AvailityTimeoutError(f"Availity request timed out for payer {payer_id}")
@@ -66,7 +75,7 @@ class AvailityClient:
             self._token = None
             self._ensure_token()
             try:
-                response = self._post_eligibility(member_id, date_of_birth, payer_id, provider_npi, service_type_code)
+                response = self._post_coverage(patient, payer_id, provider_npi, sandbox)
             except requests.Timeout:
                 self._audit("eligibility_check", hashed_id, payer_id, "timeout")
                 raise AvailityTimeoutError(f"Availity request timed out for payer {payer_id}")
@@ -82,7 +91,7 @@ class AvailityClient:
             # Availity 5xx — retry once after a short wait
             time.sleep(2)
             try:
-                response = self._post_eligibility(member_id, date_of_birth, payer_id, provider_npi, service_type_code)
+                response = self._post_coverage(patient, payer_id, provider_npi, sandbox)
             except requests.Timeout:
                 self._audit("eligibility_check", hashed_id, payer_id, "timeout")
                 raise AvailityTimeoutError(f"Availity request timed out for payer {payer_id}")
@@ -97,27 +106,38 @@ class AvailityClient:
         self._audit("eligibility_check", hashed_id, payer_id, "success")
         return response.json()
 
-    def _post_eligibility(
+    def _post_coverage(
         self,
-        member_id: str,
-        date_of_birth: str,
+        patient: dict,
         payer_id: str,
         provider_npi: str | None,
-        service_type_code: str,
+        sandbox: bool,
     ) -> requests.Response:
-        payload = {
-            "memberId": member_id,
-            "dateOfBirth": date_of_birth,
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        if sandbox:
+            headers["X-Api-Mock-Response"] = "true"
+            headers["X-Api-Mock-Scenario-ID"] = "Coverages-Complete-i"
+        data = {
             "payerId": payer_id,
-            "tradingPartnerId": self._trading_partner_id,
-            "serviceTypeCode": service_type_code,
+            "memberId": patient["member_id"],
+            "patientLastName": patient["last_name"],
+            "patientFirstName": patient["first_name"],
+            "patientBirthDate": patient["birth_date"],
+            "patientGender": patient.get("gender", ""),
+            "patientState": patient.get("state", ""),
+            "groupNumber": patient.get("group_number", ""),
+            "serviceType[]": "30",
+            "subscriberRelationship": "18",
         }
         if provider_npi:
-            payload["providerNpi"] = provider_npi
+            data["providerNpi"] = provider_npi
         return requests.post(
-            AVAILITY_ELIGIBILITY_URL,
-            json=payload,
-            headers={"Authorization": f"Bearer {self._token}"},
+            AVAILITY_COVERAGES_URL,
+            headers=headers,
+            data=data,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
 
@@ -131,7 +151,7 @@ class AvailityClient:
                     "grant_type": "client_credentials",
                     "client_id": self._client_id,
                     "client_secret": self._client_secret,
-                    "scope": "hipaa",
+                    "scope": "healthcare-hipaa-transactions hipaa",
                 },
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
@@ -139,9 +159,15 @@ class AvailityClient:
             raise AvailityAuthError("Availity token request timed out")
 
         if not response.ok:
-            raise AvailityAuthError(f"Availity token request failed with status {response.status_code}")
+            raise AvailityAuthError(
+                f"Availity token request failed with status {response.status_code}: {response.text}"
+            )
 
         body = response.json()
+        if "access_token" not in body:
+            raise AvailityAuthError(
+                f"Availity token response missing access_token. Status: {response.status_code}. Body: {body}"
+            )
         self._token = body["access_token"]
         self._token_expiry = time.time() + body.get("expires_in", 3600)
 

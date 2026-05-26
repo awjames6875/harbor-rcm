@@ -33,8 +33,7 @@ class VerificationHandler:
 
     def verify(
         self,
-        member_id: str,
-        date_of_birth: str,
+        patient: dict,
         payer_name: str,
         provider_npi: str | None = None,
     ) -> dict:
@@ -51,8 +50,7 @@ class VerificationHandler:
         if path == "A":
             try:
                 raw = self._availity.check_eligibility(
-                    member_id=member_id,
-                    date_of_birth=date_of_birth,
+                    patient=patient,
                     payer_id=route["payer_id"],
                     provider_npi=provider_npi,
                 )
@@ -63,8 +61,8 @@ class VerificationHandler:
         elif path == "B":
             try:
                 raw = self._skyvern.run_eligibility(
-                    member_id=member_id,
-                    date_of_birth=date_of_birth,
+                    member_id=patient["member_id"],
+                    date_of_birth=patient["birth_date"],
                     payer_name=payer_name,
                     provider_npi=provider_npi,
                 )
