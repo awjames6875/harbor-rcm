@@ -47,3 +47,6 @@ data/production/
 
 # Harbor loop state (ephemeral, never commit)
 .claude/state/
+
+# claude-mem auto-generated artifacts (nested duplicates)
+3_clean-the-response/3_clean-the-response/
